@@ -52,9 +52,7 @@ export async function POST(request: Request, { params }: Params) {
 
     const dependencies = Array.isArray(task.depends_on) ? task.depends_on : [];
     const dependencyTasks = loaded.tasks.filter((candidate: any) => dependencies.includes(candidate.task_index));
-    if (dependencyTasks.some((candidate: any) => candidate.status !== "completed")) {
-      return NextResponse.json({ error: "Les tâches précédentes doivent être terminées avant celle-ci." }, { status: 409 });
-    }
+    if (dependencyTasks.some((candidate: any) => candidate.status !== "completed")) return NextResponse.json({ error: "Les tâches précédentes doivent être terminées avant celle-ci." }, { status: 409 });
 
     await supabase.from("ai_tasks").update({ status: "running", started_at: new Date().toISOString(), updated_at: new Date().toISOString(), error_message: null }).eq("id", task.id).eq("user_id", user.id);
     await supabase.from("ai_workflows").update({ status: "running", current_task_index: task.task_index, updated_at: new Date().toISOString() }).eq("id", workflowId).eq("user_id", user.id);
@@ -78,7 +76,9 @@ export async function POST(request: Request, { params }: Params) {
 
     const nextStatus = actionIds.length ? "waiting_approval" : "completed";
     await supabase.from("ai_tasks").update({ status: nextStatus, output: parsed.answer, action_ids: actionIds, completed_at: nextStatus === "completed" ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq("id", task.id).eq("user_id", user.id);
-    await supabase.from("ai_workflows").update({ status: nextStatus === "waiting_approval" ? "waiting_approval" : "running", updated_at: new Date().toISOString() }).eq("id", workflowId).eq("user_id", user.id);
+
+    const workflowCompleted = nextStatus === "completed" && loaded.tasks.every((item: any) => item.id === task.id || item.status === "completed");
+    await supabase.from("ai_workflows").update({ status: nextStatus === "waiting_approval" ? "waiting_approval" : workflowCompleted ? "completed" : "running", completed_at: workflowCompleted ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq("id", workflowId).eq("user_id", user.id);
 
     return NextResponse.json({ ...(await loadWorkflow(supabase, projectId, workflowId, user.id)), result: parsed.answer, actions: actionIds });
   } catch (error) {
