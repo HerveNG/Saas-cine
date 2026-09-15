@@ -2,6 +2,19 @@ import { NextResponse } from "next/server";
 import { getSupabaseServerClient } from "../../../../../../../../lib/supabase-server";
 import { validateAction } from "../../../../../../../../lib/ai/actions";
 
+async function advanceTaskIfReady(supabase: any, taskId: string | null, userId: string) {
+  if (!taskId) return;
+  const { data: task } = await supabase.from("ai_tasks").select("id,workflow_id,action_ids,status").eq("id", taskId).eq("user_id", userId).maybeSingle();
+  if (!task || task.status !== "waiting_approval") return;
+  const actionIds = Array.isArray(task.action_ids) ? task.action_ids.filter((value: unknown): value is string => typeof value === "string") : [];
+  if (!actionIds.length) return;
+  const { data: actions } = await supabase.from("ai_actions").select("id,status").in("id", actionIds).eq("user_id", userId);
+  if (!actions || actions.length !== actionIds.length || actions.some((item: any) => item.status === "proposed")) return;
+  const failed = actions.some((item: any) => item.status === "failed");
+  await supabase.from("ai_tasks").update({ status: failed ? "failed" : "completed", completed_at: new Date().toISOString(), updated_at: new Date().toISOString(), error_message: failed ? "Une ou plusieurs actions ont échoué." : null }).eq("id", taskId).eq("user_id", userId);
+  await supabase.from("ai_workflows").update({ status: failed ? "failed" : "running", updated_at: new Date().toISOString() }).eq("id", task.workflow_id).eq("user_id", userId);
+}
+
 export async function POST(request: Request, { params }: { params: Promise<{ id: string; actionId: string }> }) {
   const { id, actionId } = await params;
   const supabase = await getSupabaseServerClient();
@@ -11,13 +24,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const decision = body?.decision;
   if (decision !== "approve" && decision !== "reject") return NextResponse.json({ error: "Décision invalide." }, { status: 400 });
 
-  const { data: action } = await supabase.from("ai_actions").select("id,project_id,action_type,payload,status").eq("id", actionId).eq("project_id", id).eq("user_id", user.id).maybeSingle();
+  const { data: action } = await supabase.from("ai_actions").select("id,project_id,task_id,action_type,payload,status").eq("id", actionId).eq("project_id", id).eq("user_id", user.id).maybeSingle();
   if (!action) return NextResponse.json({ error: "Action introuvable." }, { status: 404 });
   if (action.status !== "proposed") return NextResponse.json({ error: "Cette action a déjà été traitée." }, { status: 409 });
 
   if (decision === "reject") {
     const { data, error } = await supabase.from("ai_actions").update({ status: "rejected", executed_at: new Date().toISOString() }).eq("id", actionId).eq("status", "proposed").select("id,status").single();
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    await advanceTaskIfReady(supabase, action.task_id, user.id);
     return NextResponse.json(data);
   }
 
@@ -81,10 +95,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     const { data, error } = await supabase.from("ai_actions").update({ status: "executed", result, executed_at: new Date().toISOString(), error_message: null }).eq("id", actionId).eq("status", "proposed").select("id,status,result,executed_at").single();
     if (error) throw new Error(error.message);
+    await advanceTaskIfReady(supabase, action.task_id, user.id);
     return NextResponse.json(data);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Erreur lors de l'exécution.";
     await supabase.from("ai_actions").update({ status: "failed", error_message: errorMessage, executed_at: new Date().toISOString() }).eq("id", actionId).eq("status", "proposed");
+    await advanceTaskIfReady(supabase, action.task_id, user.id);
     return NextResponse.json({ error: errorMessage }, { status: 400 });
   }
 }
