@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { createClient } from "../../../../../../../lib/supabase/server";
-import { getProjectContext, contextToText } from "../../../../../../../lib/ai/project-context";
-import { AI_ROLES, type AIRole } from "../../../../../../../lib/ai/roles";
-import { generateAIResponse } from "../../../../../../../lib/ai/provider";
-import { actionInstruction, parseAIActionResponse } from "../../../../../../../lib/ai/action-parser";
-import { validateAction, type AIAction } from "../../../../../../../lib/ai/actions";
+import { getSupabaseServerClient } from "../../../../../../lib/supabase-server";
+import { getProjectContext, contextToText } from "../../../../../../lib/ai/project-context";
+import { AI_ROLES, type AIRole } from "../../../../../../lib/ai/roles";
+import { generateAIResponse } from "../../../../../../lib/ai/provider";
+import { actionInstruction, parseAIActionResponse } from "../../../../../../lib/ai/action-parser";
+import { validateAction } from "../../../../../../lib/ai/actions";
 
 type Params = { params: Promise<{ id: string; workflowId: string }> };
 
@@ -19,7 +19,7 @@ async function loadWorkflow(supabase: any, projectId: string, workflowId: string
 
 export async function GET(request: Request, { params }: Params) {
   const { id: projectId, workflowId } = await params;
-  const supabase = await createClient();
+  const supabase = await getSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
   try { return NextResponse.json(await loadWorkflow(supabase, projectId, workflowId, user.id)); }
@@ -28,12 +28,12 @@ export async function GET(request: Request, { params }: Params) {
 
 export async function POST(request: Request, { params }: Params) {
   const { id: projectId, workflowId } = await params;
-  const supabase = await createClient();
+  const supabase = await getSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
 
   const body = await request.json().catch(() => ({}));
-  const operation = body.operation === "run" ? "run" : body.operation === "cancel" ? "cancel" : "run";
+  const operation = body.operation === "cancel" ? "cancel" : "run";
   try {
     const loaded = await loadWorkflow(supabase, projectId, workflowId, user.id);
     if (operation === "cancel") {
@@ -60,6 +60,7 @@ export async function POST(request: Request, { params }: Params) {
     await supabase.from("ai_workflows").update({ status: "running", current_task_index: task.task_index, updated_at: new Date().toISOString() }).eq("id", workflowId).eq("user_id", user.id);
 
     const context = await getProjectContext(supabase, projectId);
+    if (!context) throw new Error("Contexte projet introuvable.");
     const dependencyOutputs = dependencyTasks.map((item: any) => `### ${item.output_label} (${AI_ROLES[item.role as AIRole].label})\n${item.output || "Aucun résultat."}`).join("\n\n");
     const system = `${AI_ROLES[task.role as AIRole].systemPrompt}\n\nTu exécutes une tâche dans un workflow séquentiel. ${task.objective}\nTu dois travailler uniquement à partir des données du projet et des sorties des tâches précédentes. Ne prétends jamais avoir appliqué une modification. ${actionInstruction()}`;
     const userPrompt = `Projet :\n${contextToText(context)}\n\nSorties des dépendances :\n${dependencyOutputs || "Aucune."}\n\nTâche : ${task.output_label}\nObjectif : ${task.objective}\n\nFournis le résultat professionnel de cette tâche. Si une modification de donnée est explicitement nécessaire, propose-la sous forme d'action JSON conforme au mode agent.`;
@@ -70,7 +71,7 @@ export async function POST(request: Request, { params }: Params) {
     for (const action of parsed.actions) {
       const valid = validateAction(action);
       if (!valid) continue;
-      const { data: saved, error } = await supabase.from("ai_actions").insert({ project_id: projectId, user_id: user.id, action_type: valid.type, payload: valid.payload, status: "proposed" }).select("id").single();
+      const { data: saved, error } = await supabase.from("ai_actions").insert({ project_id: projectId, user_id: user.id, task_id: task.id, action_type: valid.type, payload: valid.payload, status: "proposed" }).select("id").single();
       if (error) throw new Error(error.message);
       actionIds.push(saved.id);
     }
