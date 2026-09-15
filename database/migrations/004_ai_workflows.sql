@@ -33,6 +33,8 @@ create table if not exists public.ai_tasks (
   unique(workflow_id, task_index)
 );
 
+alter table public.ai_actions add column if not exists task_id uuid references public.ai_tasks(id) on delete set null;
+create index if not exists idx_ai_actions_task on public.ai_actions(task_id);
 create index if not exists idx_ai_workflows_project on public.ai_workflows(project_id, created_at desc);
 create index if not exists idx_ai_tasks_workflow on public.ai_tasks(workflow_id, task_index);
 create index if not exists idx_ai_tasks_project on public.ai_tasks(project_id, created_at desc);
@@ -42,24 +44,18 @@ alter table public.ai_tasks enable row level security;
 
 drop policy if exists "Users can view own AI workflows" on public.ai_workflows;
 create policy "Users can view own AI workflows" on public.ai_workflows for select using (auth.uid() = user_id);
-
 drop policy if exists "Users can create own AI workflows" on public.ai_workflows;
 create policy "Users can create own AI workflows" on public.ai_workflows for insert with check (auth.uid() = user_id);
-
 drop policy if exists "Users can update own AI workflows" on public.ai_workflows;
 create policy "Users can update own AI workflows" on public.ai_workflows for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
-
 drop policy if exists "Users can delete own AI workflows" on public.ai_workflows;
 create policy "Users can delete own AI workflows" on public.ai_workflows for delete using (auth.uid() = user_id);
 
 drop policy if exists "Users can view own AI tasks" on public.ai_tasks;
 create policy "Users can view own AI tasks" on public.ai_tasks for select using (auth.uid() = user_id);
-
 drop policy if exists "Users can create own AI tasks" on public.ai_tasks;
 create policy "Users can create own AI tasks" on public.ai_tasks for insert with check (auth.uid() = user_id);
-
 drop policy if exists "Users can update own AI tasks" on public.ai_tasks;
 create policy "Users can update own AI tasks" on public.ai_tasks for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
-
 drop policy if exists "Users can delete own AI tasks" on public.ai_tasks;
 create policy "Users can delete own AI tasks" on public.ai_tasks for delete using (auth.uid() = user_id);
