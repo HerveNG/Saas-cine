@@ -34,7 +34,8 @@ create table if not exists public.ai_tasks (
 );
 
 alter table public.ai_actions add column if not exists task_id uuid references public.ai_tasks(id) on delete set null;
-create index if not exists idx_ai_actions_task on public.ai_actions(task_id);
+create index if not exists ai_actions_task_idx on public.ai_actions(task_id);
+
 create index if not exists idx_ai_workflows_project on public.ai_workflows(project_id, created_at desc);
 create index if not exists idx_ai_tasks_workflow on public.ai_tasks(workflow_id, task_index);
 create index if not exists idx_ai_tasks_project on public.ai_tasks(project_id, created_at desc);
