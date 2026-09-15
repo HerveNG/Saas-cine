@@ -1,0 +1,54 @@
+export type ExportDocument = {
+  type: string;
+  title: string;
+  content: string | null;
+};
+
+export type ExportProject = {
+  title: string;
+  genre: string | null;
+  duration_minutes: string | number | null;
+  country: string | null;
+  language: string | null;
+  theme: string | null;
+  target_audience: string | null;
+  logline: string | null;
+};
+
+const ORDER = [
+  ["synopsis", "Synopsis"],
+  ["intent_note", "Note d’intention"],
+  ["director_note", "Note de réalisation"],
+  ["production_schedule", "Planning de production"],
+  ["budget", "Budget"],
+  ["financing_plan", "Plan de financement"],
+  ["pitch_deck", "Pitch deck"],
+] as const;
+
+function escapeHtml(value: string) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
+}
+
+function formatContent(value: string) {
+  return escapeHtml(value.trim())
+    .split(/\n\s*\n/)
+    .map((paragraph) => `<p>${paragraph.replace(/\n/g, "<br />")}</p>`)
+    .join("");
+}
+
+export function buildDossierHtml(project: ExportProject, documents: ExportDocument[], generatedAt = new Date()) {
+  const byType = new Map(documents.map((doc) => [doc.type, doc]));
+  const metadata = [project.genre, project.duration_minutes ? `${project.duration_minutes} min` : null, project.country, project.language].filter(Boolean).join(" · ");
+  const sections = ORDER.map(([type, label]) => {
+    const doc = byType.get(type);
+    if (!doc?.content?.trim()) return "";
+    return `<section class="document"><div class="eyebrow">FILMFUND AFRICA</div><h2>${escapeHtml(label)}</h2>${formatContent(doc.content)}</section>`;
+  }).join("");
+
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"/><title>${escapeHtml(project.title)} — Dossier</title><style>
+  @page{size:A4;margin:18mm 17mm 20mm}*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#171717;font-size:11pt;line-height:1.65}.cover{min-height:250mm;display:flex;flex-direction:column;justify-content:space-between;padding:22mm 8mm}.brand{letter-spacing:.22em;font-size:10pt;font-weight:700}.gold{color:#9a6c21}.cover h1{font-family:Georgia,serif;font-size:38pt;line-height:1.08;margin:0 0 10mm}.logline{font-size:15pt;max-width:150mm;color:#444}.meta{color:#777;font-size:10pt}.document{page-break-before:always}.eyebrow{color:#9a6c21;font-size:8pt;font-weight:700;letter-spacing:.18em;margin-bottom:4mm}.document h2{font-family:Georgia,serif;font-size:24pt;line-height:1.15;border-bottom:1px solid #ddd;padding-bottom:5mm;margin:0 0 9mm}.document p{margin:0 0 6mm;white-space:normal}footer{position:fixed;bottom:6mm;left:0;right:0;text-align:center;font-size:8pt;color:#888}</style></head><body>
+  <main class="cover"><div><div class="brand gold">FILMFUND AFRICA</div><div class="meta" style="margin-top:5mm">DOSSIER DE FINANCEMENT</div></div><div><h1>${escapeHtml(project.title)}</h1><div class="logline">${escapeHtml(project.logline || "Projet audiovisuel")}</div><div class="meta" style="margin-top:8mm">${escapeHtml(metadata || "Projet audiovisuel")}</div></div><div class="meta">Document généré le ${generatedAt.toLocaleDateString("fr-FR")}</div></main>
+  ${sections}
+  <footer>FILMFUND AFRICA · Dossier de financement</footer>
+</body></html>`;
+}
