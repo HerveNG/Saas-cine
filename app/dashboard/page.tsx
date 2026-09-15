@@ -3,12 +3,17 @@ import { getSupabaseServerClient } from "../../lib/supabase-server";
 export default async function DashboardPage() {
   const supabase = await getSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
-  const [{ data: profile }, { data: projects }, { data: opportunities }, { count: documentCount }] = await Promise.all([
+
+  const [{ data: profile }, { data: projects }, { data: opportunities }] = await Promise.all([
     user ? supabase.from("profiles").select("full_name").eq("id", user.id).maybeSingle() : Promise.resolve({ data: null }),
     user ? supabase.from("projects").select("id,title,type,progress,status,updated_at").eq("owner_id", user.id).order("updated_at", { ascending: false }) : Promise.resolve({ data: [] }),
     supabase.from("opportunities").select("id,title,type,deadline,country").eq("status", "active").order("deadline", { ascending: true }).limit(5),
-    user ? supabase.from("documents").select("id", { count: "exact", head: true }).in("project_id", (projects ?? []).map((p) => p.id)) : Promise.resolve({ count: 0 }),
   ]);
+
+  const projectIds = (projects ?? []).map((project) => project.id);
+  const { count: documentCount } = projectIds.length
+    ? await supabase.from("documents").select("id", { count: "exact", head: true }).in("project_id", projectIds)
+    : { count: 0 };
 
   return (
     <main style={{ minHeight: "100vh", padding: "32px 5vw" }}>
