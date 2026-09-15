@@ -8,6 +8,8 @@ type Message = { role: "user" | "assistant"; content: string };
 type Conversation = { id: string; role: AIRole; title: string; updated_at: string };
 type Action = { id: string; action_type: string; payload: Record<string, unknown>; status: string };
 type Workflow = { title: string; taskCount: number } | null;
+type RuntimeTask = { id: string; task_index: number; role: AIRole; objective: string; output_label: string; status: string; output?: string | null; action_ids?: string[] };
+type RuntimeWorkflow = { id: string; title: string; goal: string; status: string; current_task_index: number; tasks: RuntimeTask[] } | null;
 
 export default function AssistantPage({ params }: { params: Promise<{ id: string }> }) {
   const [projectId, setProjectId] = useState("");
@@ -18,14 +20,16 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [actions, setActions] = useState<Action[]>([]);
   const [workflow, setWorkflow] = useState<Workflow>(null);
+  const [runtimeWorkflow, setRuntimeWorkflow] = useState<RuntimeWorkflow>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => { params.then(({ id }) => setProjectId(id)); }, [params]);
-  useEffect(() => { if (projectId) { loadConversations(); loadActions(); } }, [projectId]);
+  useEffect(() => { if (projectId) { loadConversations(); loadActions(); loadRuntimeWorkflow(); } }, [projectId]);
 
   async function loadConversations() { const response = await fetch(`/api/projects/${projectId}/assistant`); if (response.ok) setConversations(await response.json()); }
   async function loadActions() { const response = await fetch(`/api/projects/${projectId}/assistant/actions`); if (response.ok) setActions(await response.json()); }
+  async function loadRuntimeWorkflow() { const response = await fetch(`/api/projects/${projectId}/assistant/workflows`); if (response.ok) { const data = await response.json(); const active = data.find((item: any) => ["running", "waiting_approval"].includes(item.status)); if (active) setRuntimeWorkflow({ ...active, tasks: active.ai_tasks ?? [] }); } }
 
   async function openConversation(item: Conversation) {
     setConversationId(item.id); setRole(item.role); setError(""); setWorkflow(null);
@@ -42,6 +46,33 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
     const data = await response.json();
     if (!response.ok) { setError(data.error || "Impossible de traiter l'action."); return; }
     setActions((current) => current.map((item) => item.id === actionId ? { ...item, ...data } : item));
+    await loadActions();
+    await loadRuntimeWorkflow();
+  }
+
+  async function startWorkflow() {
+    const goal = input.trim() || "Prépare mon projet pour une recherche de financement.";
+    setLoading(true); setError("");
+    try {
+      const response = await fetch(`/api/projects/${projectId}/assistant/workflows`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ goal }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Impossible de lancer le workflow.");
+      setRuntimeWorkflow({ ...data.workflow, tasks: data.tasks ?? [] });
+    } catch (err) { setError(err instanceof Error ? err.message : "Erreur du workflow."); }
+    finally { setLoading(false); }
+  }
+
+  async function runWorkflow() {
+    if (!runtimeWorkflow || loading) return;
+    setLoading(true); setError("");
+    try {
+      const response = await fetch(`/api/projects/${projectId}/assistant/workflows/${runtimeWorkflow.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ operation: "run" }) });
+      const data = await response.json();
+      if (!response.ok && response.status !== 409) throw new Error(data.error || "Impossible d'exécuter la tâche.");
+      if (data.tasks) setRuntimeWorkflow({ ...data.workflow, tasks: data.tasks }); else if (data.workflow) setRuntimeWorkflow({ ...data.workflow, tasks: data.tasks ?? runtimeWorkflow.tasks });
+      await loadActions();
+    } catch (err) { setError(err instanceof Error ? err.message : "Erreur du workflow."); }
+    finally { setLoading(false); }
   }
 
   async function sendMessage() {
@@ -73,7 +104,8 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
     <main style={{ minHeight: "100vh", padding: "28px 5vw 60px", maxWidth: 1500, margin: "0 auto" }}>
       <Link href={`/projects/${projectId}`} style={{ color: "#a1a1aa", fontSize: 14 }}>← Retour au projet</Link>
       <header style={{ margin: "35px 0 25px" }}><p style={{ color: "#d6a85f", letterSpacing: ".16em", fontSize: 11 }}>FILMFUND AFRICA · ASSISTANT IA</p><h1 style={{ fontSize: "clamp(2rem, 5vw, 4rem)", margin: "10px 0" }}>Votre équipe de développement.</h1><p style={{ color: "#a1a1aa", lineHeight: 1.7, maxWidth: 800 }}>Chaque agent travaille sur les données réelles du projet. Les modifications sont proposées puis validées par vous.</p></header>
-      {workflow && <div style={workflowBanner}><strong>Workflow détecté : {workflow.title}</strong><span>{workflow.taskCount} tâches spécialisées seront prises en compte par l'orchestrateur.</span></div>}
+      {workflow && <div style={workflowBanner}><strong>Workflow détecté : {workflow.title}</strong><span>{workflow.taskCount} tâches spécialisées seront prises en compte par l'orchestrateur.</span><button onClick={startWorkflow} disabled={loading} style={workflowButton}>Lancer le workflow</button></div>}
+      {runtimeWorkflow && <div style={runtimeBanner}><div style={{ display: "flex", justifyContent: "space-between", gap: 15, alignItems: "center" }}><div><strong>{runtimeWorkflow.title}</strong><div style={muted}>Statut : {runtimeWorkflow.status}</div></div><button onClick={runWorkflow} disabled={loading || runtimeWorkflow.status === "waiting_approval"} style={workflowButton}>{loading ? "Exécution…" : runtimeWorkflow.status === "completed" ? "Terminé" : "Exécuter la prochaine tâche"}</button></div><div style={stepper}>{runtimeWorkflow.tasks.map((task) => <div key={task.id} style={stepStyle(task.status)}><strong>{task.task_index + 1}</strong><span>{AI_ROLES[task.role].label}</span><small>{task.status}</small></div>)}</div></div>}
       <div style={{ display: "grid", gridTemplateColumns: "230px 220px minmax(420px, 1fr) 300px", gap: 14, alignItems: "start" }}>
         <aside style={cardStyle}><h2 style={sectionTitle}>Agents</h2><div style={{ display: "grid", gap: 7 }}>{(Object.keys(AI_ROLES) as AIRole[]).map((key) => <button key={key} onClick={() => newConversation(key)} style={{ ...roleButton, borderColor: role === key ? "#d6a85f" : "#27272a" }}><strong>{AI_ROLES[key].label}</strong><span>{AI_ROLES[key].description}</span></button>)}</div></aside>
         <aside style={cardStyle}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}><h2 style={sectionTitle}>Historique</h2><button onClick={() => newConversation()} style={newButton}>+</button></div><div style={{ display: "grid", gap: 6 }}>{conversations.map((item) => <button key={item.id} onClick={() => openConversation(item)} style={{ ...historyButton, borderColor: conversationId === item.id ? "#d6a85f" : "#27272a" }}><strong>{item.title}</strong><span>{AI_ROLES[item.role].label}</span></button>)}{!conversations.length && <div style={muted}>Aucune conversation.</div>}</div></aside>
@@ -95,4 +127,8 @@ const sendButton = { alignSelf: "stretch", padding: "0 20px", border: 0, borderR
 const actionCard = { border: "1px solid #27272a", background: "#121217", borderRadius: 8, padding: 12 };
 const approveButton = { flex: 1, border: 0, borderRadius: 6, padding: "8px 5px", background: "#d6a85f", color: "#09090b", fontWeight: 700, cursor: "pointer" };
 const rejectButton = { flex: 1, border: "1px solid #3f3f46", borderRadius: 6, padding: "8px 5px", background: "transparent", color: "#a1a1aa", cursor: "pointer" };
-const workflowBanner = { display: "grid", gap: 4, marginBottom: 20, padding: "14px 16px", border: "1px solid #5a482c", background: "#17130d", borderRadius: 10, color: "#e7c98e" };
+const workflowBanner = { display: "grid", gap: 8, marginBottom: 12, padding: "14px 16px", border: "1px solid #5a482c", background: "#17130d", borderRadius: 10, color: "#e7c98e" };
+const runtimeBanner = { display: "grid", gap: 16, marginBottom: 20, padding: 16, border: "1px solid #27272a", background: "#0f0f13", borderRadius: 10 };
+const workflowButton = { justifySelf: "start", border: 0, borderRadius: 7, padding: "9px 14px", background: "#d6a85f", color: "#09090b", fontWeight: 700, cursor: "pointer" };
+const stepper = { display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 7 };
+const stepStyle = (status: string) => ({ display: "grid", gap: 3, padding: 9, borderRadius: 7, border: `1px solid ${status === "completed" ? "#d6a85f" : status === "running" ? "#71717a" : "#27272a"}`, background: status === "completed" ? "#17130d" : "#121217", fontSize: 11 });
