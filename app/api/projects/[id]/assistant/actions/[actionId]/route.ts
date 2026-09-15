@@ -10,9 +10,20 @@ async function advanceTaskIfReady(supabase: any, taskId: string | null, userId: 
   if (!actionIds.length) return;
   const { data: actions } = await supabase.from("ai_actions").select("id,status").in("id", actionIds).eq("user_id", userId);
   if (!actions || actions.length !== actionIds.length || actions.some((item: any) => item.status === "proposed")) return;
+
   const blocked = actions.some((item: any) => item.status === "failed" || item.status === "rejected");
-  await supabase.from("ai_tasks").update({ status: blocked ? "failed" : "completed", completed_at: new Date().toISOString(), updated_at: new Date().toISOString(), error_message: blocked ? "Une ou plusieurs actions ont été refusées ou ont échoué." : null }).eq("id", taskId).eq("user_id", userId);
-  await supabase.from("ai_workflows").update({ status: blocked ? "failed" : "running", updated_at: new Date().toISOString() }).eq("id", task.workflow_id).eq("user_id", userId);
+  const taskStatus = blocked ? "failed" : "completed";
+  const now = new Date().toISOString();
+  await supabase.from("ai_tasks").update({ status: taskStatus, completed_at: now, updated_at: now, error_message: blocked ? "Une ou plusieurs actions ont été refusées ou ont échoué." : null }).eq("id", taskId).eq("user_id", userId);
+
+  const { data: remainingTasks } = await supabase.from("ai_tasks").select("id,status").eq("workflow_id", task.workflow_id).eq("user_id", userId);
+  const workflowComplete = !blocked && Array.isArray(remainingTasks) && remainingTasks.length > 0 && remainingTasks.every((item: any) => item.id === taskId ? taskStatus === "completed" : item.status === "completed");
+
+  await supabase.from("ai_workflows").update({
+    status: blocked ? "failed" : workflowComplete ? "completed" : "running",
+    completed_at: workflowComplete ? now : null,
+    updated_at: now,
+  }).eq("id", task.workflow_id).eq("user_id", userId);
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string; actionId: string }> }) {
