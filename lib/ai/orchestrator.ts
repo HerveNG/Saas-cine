@@ -15,7 +15,61 @@ export type AgentWorkflow = {
 
 const WORKFLOWS: Array<{ test: RegExp; title: string; summary: string; tasks: AgentTask[] }> = [
   {
-    test: /(financement|financer|fonds|funding|dossier de financement)/i,
+    test: /(dossier de financement|dossier financement|funding dossier|funding package)/i,
+    title: "Génération du dossier de financement",
+    summary: "Construit progressivement un dossier de financement professionnel à partir des données du projet, avec validation humaine avant toute création ou modification de document.",
+    tasks: [
+      {
+        role: "development",
+        objective: "Auditer le projet, identifier ses forces, lacunes, incohérences et informations manquantes. Préparer la structure éditoriale du dossier.",
+        output: "Diagnostic et architecture du dossier",
+      },
+      {
+        role: "screenwriter",
+        objective: "Produire les éléments narratifs destinés au dossier : logline, synopsis court, synopsis détaillé et présentation des personnages lorsque les données disponibles le permettent. Proposer la création ou mise à jour des documents narratifs correspondants.",
+        output: "Pack narratif du dossier",
+        dependsOn: [0],
+      },
+      {
+        role: "director",
+        objective: "Rédiger la note de réalisation et formaliser la vision artistique : intention, traitement, mise en scène, image, son et parti pris esthétique, sans inventer de faits absents du projet.",
+        output: "Note de réalisation",
+        dependsOn: [0, 1],
+      },
+      {
+        role: "producer",
+        objective: "Structurer le cadre de production : format, besoins principaux, étapes, ressources, hypothèses budgétaires, risques et éléments à confirmer. Proposer les documents de production pertinents.",
+        output: "Cadre de production",
+        dependsOn: [0],
+      },
+      {
+        role: "financing",
+        objective: "Construire le plan de financement à partir des éléments narratifs, artistiques et de production validés. Distinguer clairement les données connues, hypothèses et montants à confirmer.",
+        output: "Plan de financement",
+        dependsOn: [1, 2, 3],
+      },
+      {
+        role: "producer",
+        objective: "Assembler un budget prévisionnel cohérent avec le format et le cadre de production. Signaler les hypothèses financières et proposer la création ou mise à jour du document budget.",
+        output: "Budget prévisionnel",
+        dependsOn: [3, 4],
+      },
+      {
+        role: "financing",
+        objective: "Effectuer le contrôle de cohérence final du dossier : adéquation projet/budget/financement, pièces manquantes, risques et informations à vérifier avant soumission. Proposer les corrections nécessaires sans les appliquer silencieusement.",
+        output: "Contrôle de cohérence financement",
+        dependsOn: [4, 5],
+      },
+      {
+        role: "producer",
+        objective: "Préparer la checklist finale de soumission et la structure du pitch deck : documents requis, ordre de présentation, points à défendre et éléments encore à compléter.",
+        output: "Checklist et structure du pitch",
+        dependsOn: [6],
+      },
+    ],
+  },
+  {
+    test: /(financement|financer|fonds|funding)/i,
     title: "Préparation au financement",
     summary: "Prépare les éléments créatifs, de production et financiers nécessaires à une recherche de financement.",
     tasks: [
