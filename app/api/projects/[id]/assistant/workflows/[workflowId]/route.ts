@@ -22,6 +22,16 @@ type WorkflowTask = {
   error_message: string | null;
 };
 
+const DOCUMENT_OUTPUT_INSTRUCTIONS: Record<string, string> = {
+  "Pack narratif": "Le livrable doit contenir une logline améliorée et un synopsis professionnel. Propose une action create_document de type synopsis avec le synopsis finalisé. Si des personnages doivent être créés ou enrichis, propose aussi les actions create_character nécessaires.",
+  "Note de réalisation": "Le livrable doit contenir une note de réalisation exploitable dans un dossier professionnel. Propose une action create_document de type director_note avec le texte finalisé.",
+  "Cadre de production": "Le livrable doit structurer le dispositif de production, les besoins, les étapes, les ressources et les risques. Propose une action create_document de type production_schedule avec le plan de production finalisé.",
+  "Plan de financement": "Le livrable doit présenter une stratégie de financement structurée, les sources possibles, les besoins et les hypothèses. Propose une action create_document de type financing_plan avec le contenu finalisé.",
+  "Budget prévisionnel": "Le livrable doit présenter un budget prévisionnel cohérent avec les données disponibles. Propose une action create_document de type budget avec un tableau lisible et des totaux clairement identifiés. N'invente pas de devis réels : marque les montants comme hypothèses lorsque les données manquent.",
+  "Contrôle de cohérence": "Analyse la cohérence entre synopsis, vision, production, budget et financement. Si une correction documentaire est nécessaire, propose uniquement les update_document justifiées par les écarts constatés. Ne remplace pas silencieusement un document existant.",
+  "Checklist de soumission": "Construis une checklist professionnelle des pièces et informations à vérifier avant soumission. Si pertinent, propose un document de type pitch_deck contenant la structure du pitch et les éléments essentiels du dossier.",
+};
+
 async function loadWorkflow(supabase: any, projectId: string, workflowId: string, userId: string) {
   const { data: workflow, error } = await supabase
     .from("ai_workflows")
@@ -160,8 +170,9 @@ export async function POST(request: Request, { params }: Params) {
         .map((item) => `### ${item.output_label} (${AI_ROLES[item.role].label})\n${item.output || "Aucun résultat."}`)
         .join("\n\n");
 
-      const system = `${AI_ROLES[claimedTask.role].systemPrompt}\n\nTu exécutes une tâche dans un workflow séquentiel. ${claimedTask.objective}\nTu dois travailler uniquement à partir des données du projet et des sorties des tâches précédentes. Ne prétends jamais avoir appliqué une modification. ${actionInstruction()}`;
-      const userPrompt = `Projet :\n${contextToText(context)}\n\nSorties des dépendances :\n${dependencyOutputs || "Aucune."}\n\nTâche : ${claimedTask.output_label}\nObjectif : ${claimedTask.objective}\n\nFournis le résultat professionnel de cette tâche. Si une modification de donnée est explicitement nécessaire, propose-la sous forme d'action JSON conforme au mode agent.`;
+      const deliverableInstruction = DOCUMENT_OUTPUT_INSTRUCTIONS[claimedTask.output_label] || "Produis un livrable professionnel directement exploitable dans le dossier du projet. Si une donnée persistante doit être créée ou modifiée, propose une action JSON conforme au mode agent.";
+      const system = `${AI_ROLES[claimedTask.role].systemPrompt}\n\nTu exécutes une tâche dans un workflow séquentiel. ${claimedTask.objective}\nTu dois travailler uniquement à partir des données du projet et des sorties des tâches précédentes. Ne prétends jamais avoir appliqué une modification.\n\nRÈGLE DE LIVRABLE : ${deliverableInstruction}\n\nLes documents proposés doivent être autonomes, professionnels, rédigés en français et directement réutilisables dans un dossier de financement audiovisuel. Évite les placeholders vagues. Lorsque l'information manque, signale explicitement une hypothèse, une donnée à confirmer ou une lacune au lieu de l'inventer.\n\n${actionInstruction()}`;
+      const userPrompt = `Projet :\n${contextToText(context)}\n\nSorties des dépendances :\n${dependencyOutputs || "Aucune."}\n\nTâche : ${claimedTask.output_label}\nObjectif : ${claimedTask.objective}\n\nFournis d'abord le livrable professionnel dans ta réponse. Puis, si le livrable doit être conservé dans le projet, propose les actions JSON nécessaires. Pour une création de document, utilise exactement un type autorisé parmi : synopsis, intent_note, director_note, bible, pitch_deck, scenario, technical_breakdown, budget, financing_plan, production_schedule.`;
 
       const raw = await generateAIResponse([
         { role: "system", content: system },
