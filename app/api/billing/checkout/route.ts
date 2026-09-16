@@ -29,15 +29,45 @@ export async function POST(request: Request) {
   }
 
   const reference = `FF-${user.id.slice(0, 8)}-${Date.now()}`;
-  const checkout = await provider.createCheckout({
-    userId: user.id,
-    email: user.email,
-    phone,
-    plan,
-    successUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? ""}/projects/billing/success`,
-    cancelUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? ""}/projects/billing/cancelled`,
-    reference,
-  });
 
-  return NextResponse.json({ checkout });
+  const { error: transactionError } = await supabase
+    .from("billing_transactions")
+    .insert({
+      user_id: user.id,
+      plan_id: plan.id,
+      provider: providerId,
+      reference,
+      phone,
+      amount_xaf: plan.amountXaf,
+      status: "pending",
+    });
+
+  if (transactionError) {
+    return NextResponse.json({ error: transactionError.message }, { status: 500 });
+  }
+
+  try {
+    const checkout = await provider.createCheckout({
+      userId: user.id,
+      email: user.email,
+      phone,
+      plan,
+      successUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? ""}/projects/billing/success`,
+      cancelUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? ""}/projects/billing/cancelled`,
+      reference,
+    });
+
+    return NextResponse.json({ checkout });
+  } catch (error) {
+    await supabase
+      .from("billing_transactions")
+      .update({ status: "failed", updated_at: new Date().toISOString() })
+      .eq("reference", reference)
+      .eq("user_id", user.id);
+
+    return NextResponse.json({
+      error: error instanceof Error ? error.message : "Impossible d'initialiser le paiement.",
+      reference,
+    }, { status: 502 });
+  }
 }
