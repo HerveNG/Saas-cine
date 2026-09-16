@@ -12,7 +12,7 @@ export type DossierCheck = {
   detail: string;
 };
 
-const REQUIRED: Array<[string, string]> = [
+const DEFAULT_REQUIRED: Array<[string, string]> = [
   ["synopsis", "Synopsis"],
   ["director_note", "Note de réalisation"],
   ["production_schedule", "Planning de production"],
@@ -20,6 +20,19 @@ const REQUIRED: Array<[string, string]> = [
   ["financing_plan", "Plan de financement"],
   ["pitch_deck", "Pitch deck"],
 ];
+
+const DOCUMENT_LABELS: Record<string, string> = {
+  synopsis: "Synopsis",
+  intent_note: "Note d’intention",
+  director_note: "Note de réalisation",
+  production_schedule: "Planning de production",
+  budget: "Budget",
+  financing_plan: "Plan de financement",
+  pitch_deck: "Pitch deck",
+  bible: "Bible",
+  scenario: "Scénario",
+  technical_breakdown: "Dépouillement technique",
+};
 
 function hasMeaningfulContent(content: string | null) {
   return Boolean(content && content.trim().length >= 120);
@@ -35,11 +48,12 @@ function extractAmounts(text: string) {
     .filter((value) => Number.isFinite(value) && value > 0);
 }
 
-export function validateFundingDossier(documents: DossierDocument[]) {
+export function validateDossier(documents: DossierDocument[], requiredTypes = DEFAULT_REQUIRED.map(([type]) => type)) {
   const checks: DossierCheck[] = [];
   const byType = new Map(documents.map((doc) => [doc.type, doc]));
+  const required = requiredTypes.map((type) => [type, DOCUMENT_LABELS[type] ?? type] as [string, string]);
 
-  for (const [type, label] of REQUIRED) {
+  for (const [type, label] of required) {
     const doc = byType.get(type);
     if (!doc) {
       checks.push({ code: `missing_${type}`, label, status: "missing", detail: `Le document « ${label} » n'existe pas encore.` });
@@ -90,4 +104,8 @@ export function validateFundingDossier(documents: DossierDocument[]) {
     checks,
     checkedAt: new Date().toISOString(),
   };
+}
+
+export function validateFundingDossier(documents: DossierDocument[]) {
+  return validateDossier(documents);
 }
