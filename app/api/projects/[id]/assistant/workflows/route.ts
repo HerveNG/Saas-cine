@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseServerClient } from "../../../../../lib/supabase-server";
-import { detectWorkflow } from "../../../../../lib/ai/orchestrator";
+import { detectWorkflow, getPackageWorkflow } from "../../../../../lib/ai/orchestrator";
+import { getFundingPackage, type FundingPackageId } from "../../../../../lib/ai/funding-packages";
 import type { AIRole } from "../../../../../lib/ai/roles";
 
 type Params = { params: Promise<{ id: string }> };
@@ -24,9 +25,14 @@ export async function POST(request: Request, { params }: Params) {
   if (!project) return NextResponse.json({ error: "Projet introuvable." }, { status: 404 });
 
   const body = await request.json().catch(() => ({}));
-  const goal = typeof body.goal === "string" ? body.goal.trim() : "";
-  const workflow = detectWorkflow(goal);
+  const packageId = typeof body.packageId === "string" ? body.packageId as FundingPackageId : null;
+  const selectedPackage = packageId ? getFundingPackage(packageId) : null;
+  const workflow = selectedPackage ? getPackageWorkflow(packageId) : detectWorkflow(typeof body.goal === "string" ? body.goal.trim() : "");
+  const goal = typeof body.goal === "string" ? body.goal.trim() : selectedPackage?.workflowGoal || "";
+
   if (!workflow) return NextResponse.json({ error: "Aucun workflow pris en charge n'a été détecté." }, { status: 400 });
+  if (packageId && !selectedPackage) return NextResponse.json({ error: "Package de financement inconnu." }, { status: 400 });
+
   const { data: existing } = await supabase.from("ai_workflows").select("id").eq("project_id", projectId).eq("user_id", user.id).in("status", ["running", "waiting_approval"]).limit(1).maybeSingle();
   if (existing) return NextResponse.json({ error: "Un workflow est déjà en cours pour ce projet.", workflowId: existing.id }, { status: 409 });
 
@@ -39,5 +45,5 @@ export async function POST(request: Request, { params }: Params) {
     await supabase.from("ai_workflows").delete().eq("id", created.id).eq("user_id", user.id);
     return NextResponse.json({ error: tasksError.message }, { status: 500 });
   }
-  return NextResponse.json({ workflow: created, tasks: createdTasks ?? [] }, { status: 201 });
+  return NextResponse.json({ workflow: created, package: selectedPackage ?? null, tasks: createdTasks ?? [] }, { status: 201 });
 }
