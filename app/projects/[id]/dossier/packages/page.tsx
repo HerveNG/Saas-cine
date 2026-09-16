@@ -84,6 +84,7 @@ export default function PackagesPage({ params }: { params: Promise<{ id: string 
         {message && <div style={{ marginTop: 14, padding: 13, borderRadius: 7, border: "1px solid #633b32", color: "#e0a08c", background: "#1a100e" }}>{message}</div>}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 18 }}>
           <button onClick={launchPackage} disabled={launching} style={button}>{launching ? "Lancement…" : "Lancer la production IA"}</button>
+          {selected.ready && <a href={`/api/projects/${projectId}/dossier/export?package=${encodeURIComponent(selected.id)}`} style={exportButton}>Exporter le PDF</a>}
           <Link href={`/projects/${projectId}/assistant`} style={secondary}>Ouvrir l’Assistant IA</Link>
           <Link href={`/projects/${projectId}/documents`} style={secondary}>Gérer les documents</Link>
         </div>
@@ -93,4 +94,5 @@ export default function PackagesPage({ params }: { params: Promise<{ id: string 
 }
 
 const button = { display: "inline-block", padding: "11px 16px", borderRadius: 6, border: "none", background: "#d6a85f", color: "#111", cursor: "pointer", fontWeight: 700, fontSize: 13 };
+const exportButton = { display: "inline-block", padding: "11px 16px", borderRadius: 6, background: "#202018", border: "1px solid #6b5a36", color: "#e7c98e", textDecoration: "none", fontWeight: 700, fontSize: 13 };
 const secondary = { display: "inline-block", padding: "11px 16px", borderRadius: 6, background: "#171717", border: "1px solid #333", color: "#ddd", textDecoration: "none", fontSize: 13 };
