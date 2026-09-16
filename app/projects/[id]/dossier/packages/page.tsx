@@ -79,6 +79,7 @@ export default function PackagesPage({ params }: { params: Promise<{ id: string 
 
   const currentValidation = validation;
   const canExport = Boolean(currentValidation?.ready);
+  const docxUrl = selected ? `/api/projects/${projectId}/dossier/packages/${selected.id}/export/docx` : "";
 
   return <main style={{ minHeight: "100vh", padding: "32px 5vw", color: "#eee" }}>
     <Link href={`/projects/${projectId}/documents`} style={{ color: "#999" }}>← Dossier</Link>
@@ -116,7 +117,7 @@ export default function PackagesPage({ params }: { params: Promise<{ id: string 
         {message && <div style={{ marginTop: 14, padding: 13, borderRadius: 7, border: "1px solid #633b32", color: "#e0a08c", background: "#1a100e" }}>{message}</div>}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 18 }}>
           <button onClick={launchPackage} disabled={launching} style={button}>{launching ? "Lancement…" : "Lancer la production IA"}</button>
-          {canExport && <a href={`/api/projects/${projectId}/dossier/packages/${selected.id}/export`} style={exportButton}>Exporter le PDF</a>}
+          {canExport && <><a href={`/api/projects/${projectId}/dossier/packages/${selected.id}/export`} style={exportButton}>Exporter PDF</a><a href={docxUrl} style={exportButton}>Exporter DOCX</a></>}
           <Link href={`/projects/${projectId}/assistant`} style={secondary}>Ouvrir l’Assistant IA</Link>
           <Link href={`/projects/${projectId}/documents`} style={secondary}>Gérer les documents</Link>
         </div>
