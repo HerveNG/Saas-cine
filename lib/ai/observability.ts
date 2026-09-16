@@ -1,15 +1,18 @@
 import { generateAIResponse, type ChatMessage } from "./provider";
+import { assertAIQuota } from "./quota";
 
 export type AgentRunContext = {
   supabase: any;
-  workflowId: string;
-  taskId: string;
+  workflowId: string | null;
+  taskId: string | null;
   projectId: string;
   userId: string;
   role: string;
 };
 
 export async function generateObservedAIResponse(messages: ChatMessage[], context: AgentRunContext) {
+  await assertAIQuota(context.supabase, context.userId);
+
   const startedAt = Date.now();
   const startedIso = new Date().toISOString();
   const { data: run, error: insertError } = await context.supabase
