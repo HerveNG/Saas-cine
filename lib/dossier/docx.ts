@@ -7,7 +7,7 @@ import {
   TextRun,
 } from "docx";
 
-import type { ExportDocument, ExportProject } from "./export";
+import type { ExportDocument, ExportPackage, ExportProject } from "./export";
 
 const ORDER = [
   ["synopsis", "Synopsis"],
@@ -19,7 +19,24 @@ const ORDER = [
   ["pitch_deck", "Pitch deck"],
 ] as const;
 
+const LABELS: Record<string, string> = Object.fromEntries(ORDER);
+
+function orderFor(pack?: ExportPackage) {
+  if (!pack) return ORDER as readonly (readonly [string, string])[];
+  return [...pack.requiredDocuments, ...pack.optionalDocuments.filter((type) => !pack.requiredDocuments.includes(type))]
+    .map((type) => [type, LABELS[type] ?? type] as [string, string]);
+}
+
 export async function buildDossierDocx(project: ExportProject, documents: ExportDocument[], generatedAt = new Date()) {
+  return buildPackageDocx(
+    { label: "Dossier de financement", requiredDocuments: ORDER.map(([type]) => type), optionalDocuments: [] },
+    project,
+    documents,
+    generatedAt,
+  );
+}
+
+export async function buildPackageDocx(pack: ExportPackage, project: ExportProject, documents: ExportDocument[], generatedAt = new Date()) {
   const byType = new Map(documents.map((doc) => [doc.type, doc]));
   const metadata = [
     project.genre,
@@ -52,7 +69,7 @@ export async function buildDossierDocx(project: ExportProject, documents: Export
     }),
   ];
 
-  for (const [type, label] of ORDER) {
+  for (const [type, label] of orderFor(pack)) {
     const doc = byType.get(type);
     if (!doc?.content?.trim()) continue;
     children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, pageBreakBefore: true, children: [new TextRun({ text: label, color: "9A6C21" })] }));
@@ -67,8 +84,8 @@ export async function buildDossierDocx(project: ExportProject, documents: Export
 
   const document = new Document({
     creator: "FILMFUND AFRICA",
-    title: `${project.title} — Dossier de financement`,
-    description: "Dossier de financement généré par FILMFUND AFRICA",
+    title: `${project.title} — ${pack.label}`,
+    description: `Package ${pack.label} généré par FILMFUND AFRICA`,
     sections: [{ properties: {}, children }],
   });
 
