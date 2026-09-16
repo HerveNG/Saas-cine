@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSupabaseServerClient } from "../../../../../lib/supabase-server";
 import { detectWorkflow, getPackageWorkflow } from "../../../../../lib/ai/orchestrator";
 import { getFundingPackage, type FundingPackageId } from "../../../../../lib/ai/funding-packages";
+import { assertAIQuota } from "../../../../../lib/ai/quota";
 import type { AIRole } from "../../../../../lib/ai/roles";
 
 type Params = { params: Promise<{ id: string }> };
@@ -23,6 +24,12 @@ export async function POST(request: Request, { params }: Params) {
   if (!user) return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
   const { data: project } = await supabase.from("projects").select("id,title").eq("id", projectId).eq("owner_id", user.id).maybeSingle();
   if (!project) return NextResponse.json({ error: "Projet introuvable." }, { status: 404 });
+  try {
+    await assertAIQuota(supabase, user.id);
+  } catch (error) {
+    const code = (error as { code?: string })?.code;
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Quota IA indisponible.", code }, { status: code === "AI_QUOTA_EXCEEDED" ? 429 : 500 });
+  }
   const body = await request.json().catch(() => ({}));
   const packageId = typeof body.packageId === "string" ? body.packageId as FundingPackageId : null;
   const selectedPackage = packageId ? getFundingPackage(packageId) : null;
