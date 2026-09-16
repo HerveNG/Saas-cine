@@ -1,6 +1,19 @@
-type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
+export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
-async function callProvider(messages: ChatMessage[], jsonMode = false) {
+export type AIUsage = {
+  model: string;
+  providerBaseUrl: string;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+};
+
+export type AIResponse = {
+  content: string;
+  usage: AIUsage;
+};
+
+async function callProvider(messages: ChatMessage[], jsonMode = false): Promise<AIResponse> {
   const apiKey = process.env.AI_API_KEY;
   const baseUrl = (process.env.AI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
   const model = process.env.AI_MODEL;
@@ -16,7 +29,17 @@ async function callProvider(messages: ChatMessage[], jsonMode = false) {
   if (!response.ok) throw new Error(data?.error?.message || `Le fournisseur IA a répondu avec le statut ${response.status}.`);
   const content = data?.choices?.[0]?.message?.content;
   if (typeof content !== "string" || !content.trim()) throw new Error("Réponse IA vide.");
-  return content.trim();
+  const usage = data?.usage ?? {};
+  return {
+    content: content.trim(),
+    usage: {
+      model,
+      providerBaseUrl: baseUrl,
+      inputTokens: typeof usage.prompt_tokens === "number" ? usage.prompt_tokens : null,
+      outputTokens: typeof usage.completion_tokens === "number" ? usage.completion_tokens : null,
+      totalTokens: typeof usage.total_tokens === "number" ? usage.total_tokens : null,
+    },
+  };
 }
 
 export async function generateAIResponse(messages: ChatMessage[]) {
@@ -24,9 +47,9 @@ export async function generateAIResponse(messages: ChatMessage[]) {
 }
 
 export async function generateAIStructuredResponse(messages: ChatMessage[]) {
-  const content = await callProvider(messages, true);
+  const response = await callProvider(messages, true);
   try {
-    return JSON.parse(content) as unknown;
+    return JSON.parse(response.content) as unknown;
   } catch {
     throw new Error("Le fournisseur IA a retourné un JSON invalide.");
   }
