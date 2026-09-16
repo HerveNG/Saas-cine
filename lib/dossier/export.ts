@@ -15,7 +15,7 @@ export type ExportProject = {
   logline: string | null;
 };
 
-type ExportPackage = {
+export type ExportPackage = {
   label: string;
   requiredDocuments: string[];
   optionalDocuments: string[];
