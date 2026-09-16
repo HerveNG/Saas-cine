@@ -28,12 +28,32 @@ export default function PackagesPage({ params }: { params: Promise<{ id: string 
   const [packages, setPackages] = useState<PackageView[]>([]);
   const [selected, setSelected] = useState<PackageView | null>(null);
   const [loading, setLoading] = useState(true);
+  const [launching, setLaunching] = useState(false);
+  const [message, setMessage] = useState("");
 
   useEffect(() => { params.then(({ id }) => { setProjectId(id); load(id); }); }, [params]);
+
   async function load(id: string) {
     const response = await fetch(`/api/projects/${id}/dossier/packages`, { cache: "no-store" });
     if (response.ok) { const data = await response.json(); setProject(data.project); setPackages(data.packages); }
     setLoading(false);
+  }
+
+  async function launchPackage() {
+    if (!selected || launching) return;
+    setLaunching(true); setMessage("");
+    try {
+      const response = await fetch(`/api/projects/${projectId}/assistant/workflows`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ packageId: selected.id, goal: selected.workflowGoal }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Impossible de lancer le workflow.");
+      window.location.href = `/projects/${projectId}/assistant?workflow=${data.workflow.id}`;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Erreur de lancement.");
+    } finally { setLaunching(false); }
   }
 
   return <main style={{ minHeight: "100vh", padding: "32px 5vw", color: "#eee" }}>
@@ -45,7 +65,7 @@ export default function PackagesPage({ params }: { params: Promise<{ id: string 
       {project && <div style={{ color: "#d6a85f", margin: "25px 0" }}>{project.title}</div>}
 
       {loading ? <p style={{ color: "#777" }}>Analyse des documents…</p> : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 14 }}>
-        {packages.map(item => <button key={item.id} onClick={() => setSelected(item)} style={{ textAlign: "left", color: "#eee", background: selected?.id === item.id ? "#17130d" : "#0d0d11", border: selected?.id === item.id ? "1px solid #8f6b2d" : "1px solid #292929", borderRadius: 10, padding: 20, cursor: "pointer" }}>
+        {packages.map(item => <button key={item.id} onClick={() => { setSelected(item); setMessage(""); }} style={{ textAlign: "left", color: "#eee", background: selected?.id === item.id ? "#17130d" : "#0d0d11", border: selected?.id === item.id ? "1px solid #8f6b2d" : "1px solid #292929", borderRadius: 10, padding: 20, cursor: "pointer" }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}><strong style={{ fontSize: 17 }}>{item.label}</strong><span style={{ color: item.ready ? "#9ac7a0" : "#d6a85f", fontSize: 12 }}>{item.completion}%</span></div>
           <p style={{ color: "#999", lineHeight: 1.5, minHeight: 48 }}>{item.description}</p>
           <small style={{ color: "#666" }}>{item.audience}</small>
@@ -60,12 +80,17 @@ export default function PackagesPage({ params }: { params: Promise<{ id: string 
           <div><strong>Documents requis</strong>{selected.requiredDocuments.map(type => <div key={type} style={{ padding: "8px 0", color: selected.missing.includes(type) ? "#d48b75" : "#aaa" }}>{selected.missing.includes(type) ? "○" : "✓"} {labels[type] ?? type}</div>)}</div>
           <div><strong>Documents optionnels</strong>{selected.optionalDocuments.map(type => <div key={type} style={{ padding: "8px 0", color: "#777" }}>+ {labels[type] ?? type}</div>)}</div>
         </div>
-        <div style={{ marginTop: 22, padding: 16, background: "#141414", borderRadius: 8, color: "#aaa" }}>{selected.ready ? "✓ Ce package dispose de tous ses documents requis. Passez à la validation finale." : `Prochaine action : compléter ${selected.missing.map(type => labels[type] ?? type).join(", ")}.`}</div>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 18 }}><Link href={`/projects/${projectId}/assistant`} style={button}>Ouvrir l’Assistant IA</Link><Link href={`/projects/${projectId}/documents`} style={secondary}>Gérer les documents</Link></div>
+        <div style={{ marginTop: 22, padding: 16, background: "#141414", borderRadius: 8, color: "#aaa" }}>{selected.ready ? "✓ Ce package dispose de tous ses documents requis. Le workflow peut maintenant contrôler et finaliser le dossier." : `Le workflow IA peut produire les pièces manquantes : ${selected.missing.map(type => labels[type] ?? type).join(", ")}.`}</div>
+        {message && <div style={{ marginTop: 14, padding: 13, borderRadius: 7, border: "1px solid #633b32", color: "#e0a08c", background: "#1a100e" }}>{message}</div>}
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 18 }}>
+          <button onClick={launchPackage} disabled={launching} style={button}>{launching ? "Lancement…" : "Lancer la production IA"}</button>
+          <Link href={`/projects/${projectId}/assistant`} style={secondary}>Ouvrir l’Assistant IA</Link>
+          <Link href={`/projects/${projectId}/documents`} style={secondary}>Gérer les documents</Link>
+        </div>
       </section>}
     </div>
   </main>;
 }
 
-const button = { display: "inline-block", padding: "11px 16px", borderRadius: 6, background: "#d6a85f", color: "#111", textDecoration: "none", fontWeight: 700, fontSize: 13 };
+const button = { display: "inline-block", padding: "11px 16px", borderRadius: 6, border: "none", background: "#d6a85f", color: "#111", cursor: "pointer", fontWeight: 700, fontSize: 13 };
 const secondary = { display: "inline-block", padding: "11px 16px", borderRadius: 6, background: "#171717", border: "1px solid #333", color: "#ddd", textDecoration: "none", fontSize: 13 };
