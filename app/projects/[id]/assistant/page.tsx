@@ -39,9 +39,12 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
   }
 
   async function refreshWorkflow(workflowId = runtimeWorkflow?.id) {
-    if (!workflowId) return;
-    const response = await fetch(`/api/projects/${projectId}/assistant/workflows/${workflowId}`);
-    if (response.ok) setRuntimeWorkflow(await response.json());
+    if (!workflowId) return null;
+    const response = await fetch(`/api/projects/${projectId}/assistant/workflows/${workflowId}`, { cache: "no-store" });
+    if (!response.ok) return null;
+    const data = await response.json();
+    setRuntimeWorkflow(data);
+    return data as RuntimeWorkflow;
   }
 
   async function openConversation(item: Conversation) {
@@ -55,12 +58,13 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
 
   async function decideAction(actionId: string, decision: "approve" | "reject") {
     setError("");
+    const workflowId = runtimeWorkflow?.id;
     const response = await fetch(`/api/projects/${projectId}/assistant/actions/${actionId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision }) });
     const data = await response.json();
     if (!response.ok) { setError(data.error || "Impossible de traiter l'action."); return; }
     await loadActions();
-    await loadRuntimeWorkflow();
-    if (runtimeWorkflow?.id) await refreshWorkflow(runtimeWorkflow.id);
+    if (workflowId) await refreshWorkflow(workflowId);
+    else await loadRuntimeWorkflow();
   }
 
   async function startWorkflow() {
@@ -75,15 +79,34 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
     finally { setLoading(false); }
   }
 
+  async function executeWorkflowStep(workflowId: string) {
+    const response = await fetch(`/api/projects/${projectId}/assistant/workflows/${workflowId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ operation: "run" }) });
+    const data = await response.json();
+    if (!response.ok && response.status !== 409) throw new Error(data.error || "Impossible d'exécuter la tâche.");
+    if (data.workflow) setRuntimeWorkflow({ ...data.workflow, tasks: data.tasks ?? [] });
+    await loadActions();
+    return data;
+  }
+
   async function runWorkflow() {
-    if (!runtimeWorkflow || loading || ["completed", "cancelled"].includes(runtimeWorkflow.status)) return;
+    if (!runtimeWorkflow || loading || ["completed", "cancelled", "waiting_approval"].includes(runtimeWorkflow.status)) return;
+    setLoading(true); setError("");
+    try { await executeWorkflowStep(runtimeWorkflow.id); }
+    catch (err) { setError(err instanceof Error ? err.message : "Erreur du workflow."); }
+    finally { setLoading(false); }
+  }
+
+  async function runWorkflowToCheckpoint() {
+    if (!runtimeWorkflow || loading || ["completed", "cancelled", "waiting_approval"].includes(runtimeWorkflow.status)) return;
     setLoading(true); setError("");
     try {
-      const response = await fetch(`/api/projects/${projectId}/assistant/workflows/${runtimeWorkflow.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ operation: "run" }) });
-      const data = await response.json();
-      if (!response.ok && response.status !== 409) throw new Error(data.error || "Impossible d'exécuter la tâche.");
-      if (data.workflow) setRuntimeWorkflow({ ...data.workflow, tasks: data.tasks ?? runtimeWorkflow.tasks });
-      await loadActions();
+      let state = runtimeWorkflow;
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        if (!state || ["completed", "cancelled", "waiting_approval"].includes(state.status)) break;
+        await executeWorkflowStep(state.id);
+        state = await refreshWorkflow(state.id);
+      }
+      if (state?.status === "running") setError("Le workflow contient encore des étapes. Relancez l'exécution pour poursuivre.");
     } catch (err) { setError(err instanceof Error ? err.message : "Erreur du workflow."); }
     finally { setLoading(false); }
   }
@@ -140,8 +163,9 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
       {runtimeWorkflow && <section style={runtimeBanner}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 15, alignItems: "center", flexWrap: "wrap" }}>
           <div><div style={{ color: "#d6a85f", fontSize: 11, letterSpacing: ".1em" }}>ORCHESTRATEUR</div><strong style={{ fontSize: 18 }}>{runtimeWorkflow.title}</strong><div style={muted}>{runtimeWorkflow.goal}</div></div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={runWorkflow} disabled={loading || ["completed", "cancelled", "waiting_approval"].includes(runtimeWorkflow.status)} style={workflowButton}>{loading ? "Exécution…" : runtimeWorkflow.status === "completed" ? "Workflow terminé" : runtimeWorkflow.status === "waiting_approval" ? "Validation requise" : "Exécuter la prochaine tâche"}</button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button onClick={runWorkflowToCheckpoint} disabled={loading || ["completed", "cancelled", "waiting_approval"].includes(runtimeWorkflow.status)} style={workflowButton}>{loading ? "Production…" : runtimeWorkflow.status === "completed" ? "Workflow terminé" : runtimeWorkflow.status === "waiting_approval" ? "Validation requise" : "Produire jusqu'à validation"}</button>
+            <button onClick={runWorkflow} disabled={loading || ["completed", "cancelled", "waiting_approval"].includes(runtimeWorkflow.status)} style={secondaryWorkflowButton}>Étape suivante</button>
             {! ["completed", "cancelled"].includes(runtimeWorkflow.status) && <button onClick={cancelWorkflow} disabled={loading} style={cancelButton}>Annuler</button>}
           </div>
         </div>
@@ -171,6 +195,7 @@ const actionCard = { border: "1px solid #27272a", background: "#121217", borderR
 const approveButton = { flex: 1, border: 0, borderRadius: 6, padding: "8px 5px", background: "#d6a85f", color: "#09090b", fontWeight: 700, cursor: "pointer" };
 const rejectButton = { flex: 1, border: "1px solid #3f3f46", borderRadius: 6, padding: "8px 5px", background: "transparent", color: "#a1a1aa", cursor: "pointer" };
 const workflowButton = { border: 0, borderRadius: 7, padding: "9px 13px", background: "#d6a85f", color: "#09090b", fontWeight: 700, cursor: "pointer" };
+const secondaryWorkflowButton = { border: "1px solid #3f3f46", borderRadius: 7, padding: "9px 13px", background: "#121217", color: "#e4e4e7", fontWeight: 700, cursor: "pointer" };
 const cancelButton = { border: "1px solid #3f3f46", borderRadius: 7, padding: "9px 13px", background: "transparent", color: "#a1a1aa", cursor: "pointer" };
 const workflowBanner = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 15, marginBottom: 12, padding: "14px 16px", border: "1px solid #5a482c", background: "#17130d", borderRadius: 10, color: "#e7c98e", flexWrap: "wrap" as const };
 const runtimeBanner = { display: "grid", gap: 16, marginBottom: 14, padding: 16, border: "1px solid #3f3f46", background: "#0f0f13", borderRadius: 10 };
