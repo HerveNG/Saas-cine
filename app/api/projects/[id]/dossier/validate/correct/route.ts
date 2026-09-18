@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { getSupabaseServerClient } from "../../../../../../../lib/supabase-server";
-import { contextToText, getProjectContext } from "../../../../../../../lib/ai/project-context";
-import { generateObservedAIResponse } from "../../../../../../../lib/ai/observability";
-import { parseAIActionResponse } from "../../../../../../../lib/ai/action-parser";
-import { validateAction } from "../../../../../../../lib/ai/actions";
-import { getFundingPackage } from "../../../../../../../lib/ai/funding-packages";
+import { getSupabaseServerClient } from "../../../../../../lib/supabase-server";
+import { contextToText, getProjectContext } from "../../../../../../lib/ai/project-context";
+import { generateObservedAIResponse } from "../../../../../../lib/ai/observability";
+import { parseAIActionResponse } from "../../../../../../lib/ai/action-parser";
+import { validateAction } from "../../../../../../lib/ai/actions";
+import { getFundingPackage } from "../../../../../../lib/ai/funding-packages";
 
 type Params = { params: Promise<{ id: string }> };
 
